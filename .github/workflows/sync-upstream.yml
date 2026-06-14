@@ -1,0 +1,52 @@
+name: Sync Upstream Branches
+
+on:
+  schedule:
+    - cron: '0 4 * * *'  # daily at 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/thexaero/open-parties-and-claims.git
+          git fetch upstream
+
+      - name: Sync all upstream branches to fork
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          for branch in $(git branch -r | grep 'upstream/' | grep -v 'HEAD' | sed 's|.*upstream/||'); do
+            echo "Processing branch: $branch"
+            upstream_sha=$(git rev-parse "upstream/$branch")
+
+            if git ls-remote --exit-code origin "refs/heads/$branch" > /dev/null 2>&1; then
+              origin_sha=$(git ls-remote origin "refs/heads/$branch" | awk '{print $1}')
+              if [ "$upstream_sha" = "$origin_sha" ]; then
+                echo "  SKIP: $branch is already up to date"
+                continue
+              fi
+              merge_base=$(git merge-base "upstream/$branch" "$origin_sha" 2>/dev/null || echo "")
+              if [ "$merge_base" = "$origin_sha" ]; then
+                echo "  FAST-FORWARD: $branch"
+                git push origin "upstream/$branch:refs/heads/$branch"
+              else
+                echo "  SKIP: $branch has diverged (fork has custom commits)"
+              fi
+            else
+              echo "  CREATE: $branch (new branch from upstream)"
+              git push origin "upstream/$branch:refs/heads/$branch"
+            fi
+          done
