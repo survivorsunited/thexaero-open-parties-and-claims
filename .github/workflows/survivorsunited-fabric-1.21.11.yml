@@ -65,12 +65,16 @@ jobs:
           path: release
       - name: Attach jar, checksum and README to GitHub release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.SURVIVORSUNITED_RELEASE_TOKEN }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.event.release.tag_name }}
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::Release publication skipped: configure SURVIVORSUNITED_RELEASE_TOKEN with repository Contents: write and Workflows: write. The downloadable Actions artifact was created successfully."
+            exit 0
+          fi
           if [ "${{ github.event_name }}" = "push" ]; then
             TAG="su-1.21.11-${GITHUB_SHA:0:12}"
             gh release create "$TAG" release/* --target "$GITHUB_SHA" --title "SurvivorsUnited OPAC 1.21.11 (${GITHUB_SHA:0:12})" --notes "Automated Fabric 1.21.11 build. Includes SHA256SUMS.txt; test before production deployment." --prerelease
