@@ -31,7 +31,7 @@ jobs:
       - name: Build Fabric 1.21.11 and run checks
         run: |
           chmod +x ./gradlew
-          ./gradlew :Fabric:build --no-daemon --stacktrace
+          ./gradlew :Common:test :Fabric:build --no-daemon --stacktrace
       - name: Stage distributable jar and checksum
         shell: bash
         run: |
