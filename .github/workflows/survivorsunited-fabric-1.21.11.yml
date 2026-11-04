@@ -1,0 +1,67 @@
+name: SurvivorsUnited Fabric 1.21.11 build and release
+
+on:
+  push:
+    branches:
+      - 'survivorsunited/1.21.11'
+  pull_request:
+    branches:
+      - 'survivorsunited/1.21.11'
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Build Fabric 1.21.11 and run checks
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :Fabric:build --no-daemon --stacktrace
+      - name: Stage distributable jar and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          mapfile -t files < <(find Fabric/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' ! -name '*-shadow.jar' | sort)
+          if [ "${#files[@]}" -ne 1 ]; then
+            printf 'Expected exactly one Fabric release JAR, found %s\n' "${#files[@]}"
+            printf '%s\n' "${files[@]}"
+            exit 1
+          fi
+          cp "${files[0]}" release/
+          (cd release && sha256sum ./*.jar > SHA256SUMS.txt)
+          printf 'Fabric 1.21.11 build of SurvivorsUnited Open Parties and Claims\nSource: %s\nCommit: %s\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA" > release/README.txt
+      - name: Upload release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: survivorsunited-opac-fabric-1.21.11
+          path: release/
+          if-no-files-found: error
+  publish:
+    if: github.event_name == 'release' && github.event.action == 'published'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: survivorsunited-opac-fabric-1.21.11
+          path: release
+      - name: Attach jar, checksum and README to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" release/* --clobber
