@@ -42,6 +42,7 @@ public class PartyCommandRegister {
 		new TransferPartyCommand().register(dispatcher, environment, commandRequirementProvider);
 		new PartyAdminModeCommand().register(dispatcher, environment, commandRequirementProvider);
 		new ImpersonatePartyCommand().register(dispatcher, environment, commandRequirementProvider);
+		new SurvivorsUnitedPartyAdminCommand().register(dispatcher);
 	}
 
 }
