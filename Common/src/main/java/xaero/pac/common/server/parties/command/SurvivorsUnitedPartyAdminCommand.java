@@ -97,22 +97,21 @@ public final class SurvivorsUnitedPartyAdminCommand {
         IServerParty<IPartyMember, IPartyPlayerInfo, IPartyAlly> current =
                 manager.getPartyByMember(targetId);
 
+        SurvivorsUnitedAdminPolicy.Action operation =
+                SurvivorsUnitedAdminPolicy.Action.valueOf(action.toUpperCase(java.util.Locale.ROOT));
+        String rejection = SurvivorsUnitedAdminPolicy.validate(operation,
+                current == destination, current != null && current != destination,
+                current != null && current.getOwner().getUUID().equals(targetId),
+                destination.getMemberCount() >= ServerConfig.CONFIG.maxPartyMembers.get(),
+                destination.getInviteCount() >= ServerConfig.CONFIG.maxPartyInvites.get(),
+                destination.isInvited(targetId));
+        if (rejection != null)
+            return fail(source, rejection);
+
         if (action.equals("remove")) {
-            if (destination != current)
-                return fail(source, player.name() + " is not a member of " + owner.name() + "'s party");
-            if (destination.getOwner().getUUID().equals(targetId))
-                return fail(source, "Cannot remove a party owner; transfer ownership first");
             if (destination.removeMember(targetId) == null)
                 return fail(source, "Could not remove member");
         } else if (action.equals("invite")) {
-            if (current != null)
-                return fail(source, player.name() + " already belongs to a party");
-            if (destination.getInviteCount() >= ServerConfig.CONFIG.maxPartyInvites.get())
-                return fail(source, "Party invitation limit reached");
-            if (destination.getMemberCount() >= ServerConfig.CONFIG.maxPartyMembers.get())
-                return fail(source, "Party membership limit reached");
-            if (destination.isInvited(targetId))
-                return fail(source, "Player has already been invited");
             if (destination.invitePlayer(targetId, player.name()) == null)
                 return fail(source, "Could not create invitation");
             ServerPlayer online = server.getPlayerList().getPlayer(targetId);
@@ -121,21 +120,13 @@ public final class SurvivorsUnitedPartyAdminCommand {
                         + ". Accept with /" + PartyCommandRegister.COMMAND_PREFIX
                         + " accept " + destination.getId()));
         } else {
-            if (current == destination)
-                return fail(source, player.name() + " is already in this party");
-            if (current != null && action.equals("add"))
-                return fail(source, "Player belongs to another party. Use admin move explicitly");
-            if (current == null && action.equals("move"))
-                return fail(source, "Player has no existing party. Use admin add");
-            if (current != null && current.getOwner().getUUID().equals(targetId))
-                return fail(source, "Cannot move a party owner; transfer ownership first");
-            if (destination.getMemberCount() >= ServerConfig.CONFIG.maxPartyMembers.get())
-                return fail(source, "Destination party is full");
+            // Mutate only after validating the destination. Restore rank if an add fails.
+            var formerRank = current == null ? null : current.getMemberInfo(targetId).getRank();
             if (current != null)
                 current.removeMember(targetId);
             if (destination.addMember(targetId, null, player.name()) == null) {
                 if (current != null)
-                    current.addMember(targetId, null, player.name()); // best-effort rollback
+                    current.addMember(targetId, formerRank, player.name());
                 return fail(source, "Could not add member");
             }
         }
