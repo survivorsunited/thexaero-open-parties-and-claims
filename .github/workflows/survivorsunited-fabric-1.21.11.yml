@@ -49,7 +49,7 @@ jobs:
           path: release/
           if-no-files-found: error
   publish:
-    if: github.event_name == 'release' && github.event.action == 'published'
+    if: github.event_name == 'push' || (github.event_name == 'release' && github.event.action == 'published')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -64,4 +64,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG" release/* --clobber
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="su-1.21.11-${GITHUB_SHA:0:12}"
+            gh release create "$TAG" release/* --target "$GITHUB_SHA" --title "SurvivorsUnited OPAC 1.21.11 (${GITHUB_SHA:0:12})" --notes "Automated Fabric 1.21.11 build. Includes SHA256SUMS.txt; test before production deployment." --prerelease
+          else
+            gh release upload "$TAG" release/* --clobber
+          fi
