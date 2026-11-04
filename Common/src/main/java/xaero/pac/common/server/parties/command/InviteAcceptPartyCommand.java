@@ -69,29 +69,36 @@ public class InviteAcceptPartyCommand {
 				context.getSource().sendFailure(adaptiveLocalizer.getFor(player, "gui.xaero_parties_join_party_already_in_one"));
 				return 0;
 			}
-			UUID targetPartyId;
+			UUID targetPartyId = null;
+			String supplied = null;
 			try {
-				String targetPartyStringId = context.getArgument("id", String.class);
-				targetPartyId = UUID.fromString(targetPartyStringId);
-			} catch(IllegalArgumentException iae) {
-				// A readable owner or party name may identify an existing invitation.
-				String supplied = context.getArgument("id", String.class);
-				var matches = partyManager.getTypedAllStream()
-						.filter(p -> p.isInvited(playerId))
-						.filter(p -> p.getOwner().getUsername().equalsIgnoreCase(supplied)
-								|| p.getDefaultName().equalsIgnoreCase(supplied))
-						.limit(2).toList();
-				if(matches.size() > 1) {
-					context.getSource().sendFailure(Component.literal("Multiple invited parties match that name; use party UUID"));
-					return 0;
+				supplied = context.getArgument("id", String.class);
+			} catch (IllegalArgumentException ignored) {
+				// No argument: use the most recent invitation, if any.
+			}
+			if (supplied != null) {
+				try {
+					targetPartyId = UUID.fromString(supplied);
+				} catch (IllegalArgumentException ignored) {
+					final String query = supplied;
+					var matches = partyManager.getTypedAllStream()
+							.filter(p -> p.isInvited(playerId))
+							.filter(p -> p.getOwner().getUsername().equalsIgnoreCase(query)
+									|| p.getDefaultName().equalsIgnoreCase(query))
+							.limit(2).toList();
+					if (matches.size() != 1) {
+						context.getSource().sendFailure(Component.literal("No unique pending party invitation matches '" + query + "'"));
+						return 0;
+					}
+					targetPartyId = matches.getFirst().getId();
 				}
+			} else {
 				CompoundTag data = Services.PLATFORM.getEntityAccess().getPersistentData(player);
-				targetPartyId = !matches.isEmpty() ? matches.getFirst().getId()
-						: XaeroNbtUtil.getUUID(data, "xaero_OPAC_LastInviteId").orElse(null);
-				if(targetPartyId == null) {
-					context.getSource().sendFailure(adaptiveLocalizer.getFor(player, "gui.xaero_parties_join_invalid_id"));
-					return 0;
-				}
+				targetPartyId = XaeroNbtUtil.getUUID(data, "xaero_OPAC_LastInviteId").orElse(null);
+			}
+			if (targetPartyId == null) {
+				context.getSource().sendFailure(adaptiveLocalizer.getFor(player, "gui.xaero_parties_join_invalid_id"));
+				return 0;
 			}
 			IServerParty<IPartyMember, IPartyPlayerInfo, IPartyAlly> targetParty = partyManager.getPartyById(targetPartyId);
 			if(targetParty == null) {
