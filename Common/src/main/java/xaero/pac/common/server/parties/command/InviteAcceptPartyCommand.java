@@ -56,7 +56,7 @@ import java.util.stream.Stream;
 public class InviteAcceptPartyCommand {
 	
 	public void register(CommandDispatcher<CommandSourceStack> dispatcher, Commands.CommandSelection environment, CommandRequirementProvider commandRequirementProvider) {
-		Predicate<CommandSourceStack> requirement = commandRequirementProvider.getNonMemberRequirement(p -> true, true);
+		Predicate<CommandSourceStack> requirement = c -> true; // Visible to members too; executor reports why acceptance is blocked.
 		Command<CommandSourceStack> executor = context -> {
 			ServerPlayer player = context.getSource().getPlayerOrException();
 			UUID playerId = player.getUUID();
@@ -74,8 +74,20 @@ public class InviteAcceptPartyCommand {
 				String targetPartyStringId = context.getArgument("id", String.class);
 				targetPartyId = UUID.fromString(targetPartyStringId);
 			} catch(IllegalArgumentException iae) {
+				// A readable owner or party name may identify an existing invitation.
+				String supplied = context.getArgument("id", String.class);
+				var matches = partyManager.getTypedAllStream()
+						.filter(p -> p.isInvited(playerId))
+						.filter(p -> p.getOwner().getUsername().equalsIgnoreCase(supplied)
+								|| p.getDefaultName().equalsIgnoreCase(supplied))
+						.limit(2).toList();
+				if(matches.size() > 1) {
+					context.getSource().sendFailure(Component.literal("Multiple invited parties match that name; use party UUID"));
+					return 0;
+				}
 				CompoundTag data = Services.PLATFORM.getEntityAccess().getPersistentData(player);
-				targetPartyId = XaeroNbtUtil.getUUID(data, "xaero_OPAC_LastInviteId").orElse(null);
+				targetPartyId = !matches.isEmpty() ? matches.getFirst().getId()
+						: XaeroNbtUtil.getUUID(data, "xaero_OPAC_LastInviteId").orElse(null);
 				if(targetPartyId == null) {
 					context.getSource().sendFailure(adaptiveLocalizer.getFor(player, "gui.xaero_parties_join_invalid_id"));
 					return 0;
@@ -103,19 +115,25 @@ public class InviteAcceptPartyCommand {
 			serverData.getPlayerPermissionChangeHandler().sendCommandsAndUpdatePermissions(player, serverData, false);
 			return 1;
 		};
+		for (String verb : new String[]{"join", "accept"}) {
 		LiteralArgumentBuilder<CommandSourceStack> command = Commands.literal(PartyCommandRegister.COMMAND_PREFIX).requires(c -> ServerConfig.CONFIG.partiesEnabled.get())
-				.then(Commands.literal("join")
+				.then(Commands.literal(verb)
 				.requires(requirement)
 				.executes(executor)
 				.then(Commands.argument("id", StringArgumentType.word())
 				.suggests((context, builder) -> {
 					ServerPlayer casterPlayer = context.getSource().getPlayerOrException();
 					CompoundTag data = Services.PLATFORM.getEntityAccess().getPersistentData(casterPlayer);
+					IServerData<?, IServerParty<IPartyMember, IPartyPlayerInfo, IPartyAlly>> sd = ServerData.from(context.getSource().getServer());
+					Stream<String> pending = sd.getPartyManager().getTypedAllStream()
+							.filter(p -> p.isInvited(casterPlayer.getUUID()))
+							.flatMap(p -> Stream.of(p.getId().toString(), p.getOwner().getUsername()));
 					Stream<String> lastInviteId = data.contains("xaero_OPAC_LastInviteId") ? Stream.of(XaeroNbtUtil.getUUID(data, "xaero_OPAC_LastInviteId").get().toString()) : Stream.empty();
-					return SharedSuggestionProvider.suggest(lastInviteId, builder);
+					return SharedSuggestionProvider.suggest(Stream.concat(pending, lastInviteId).distinct(), builder);
 				})
 				.executes(executor)));
 		dispatcher.register(command);
+		}
 	}
 
 }
