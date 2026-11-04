@@ -50,7 +50,7 @@ GitHub Actions workflow `.github/workflows/survivorsunited-fabric-1.21.11.yml`:
 - Builds Fabric using Java 21 via `./gradlew :Fabric:build`.
 - Fails unless exactly one distributable JAR is found in `Fabric/build/libs`.
 - Packages the JAR, `SHA256SUMS.txt` and `README.txt` into a downloadable Actions artifact.
-- On a successful push to `survivorsunited/1.21.11`, publishes a versioned GitHub **prerelease** tagged `su-1.21.11-<commit>`; manually published GitHub releases also receive package assets.
+- On a successful push to `survivorsunited/1.21.11`, **attempts** to publish a versioned GitHub prerelease tagged `su-1.21.11-<commit>` (or attaches assets to a manually published release) when the repository Actions secret `SURVIVORSUNITED_RELEASE_TOKEN` is configured. The token needs repository Contents: write, and may need Workflows: write because the release target branch contains workflow changes not present on the default branch. Without the secret, release publication is skipped but the Actions build artifact remains downloadable. GitHub's built-in workflow token produced HTTP 403 on release creation even though the job requested Contents: write.
 - Does not deploy to the production server or update minecraft-mods-manager automatically.
 
 ## Server verification checklist (Minecraft 1.21.11)
