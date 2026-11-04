@@ -48,6 +48,7 @@ repositories {
 }
 
 dependencies {
+     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
      compileOnly group:'org.spongepowered', name:'mixin', version:'0.8.5'
      compileOnly group: 'com.google.code.findbugs', name: 'jsr305', version: '3.0.1'
 
@@ -93,4 +94,8 @@ publishing {
             from components.java
         }
     }
+}
+// SurvivorsUnited membership regression tests
+tasks.named('test') {
+    useJUnitPlatform()
 }
