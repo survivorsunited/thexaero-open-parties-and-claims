@@ -45,6 +45,7 @@ public class ClaimsCommandRegister {
 		new ClaimsTeleportCommand().register(dispatcher, environment);
 		new ClaimsClearCommand().register(dispatcher, environment);
 		new ClaimsTransferCommand().register(dispatcher, environment);
+		new SurvivorsUnitedClaimAccessCommand().register(dispatcher);
 		new ClaimsAreaClaimActionInterruptCommand().register(dispatcher, environment);
 	}
 
