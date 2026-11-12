@@ -2,82 +2,90 @@ name: SurvivorsUnited Fabric 1.21.11 build and release
 
 on:
   push:
-    branches:
-      - 'survivorsunited/1.21.11'
+    branches: ['survivorsunited/1.21.11']
+    tags: ['su-fabric-v*']
   pull_request:
-    branches:
-      - 'survivorsunited/1.21.11'
+    branches: ['survivorsunited/1.21.11']
   workflow_dispatch:
-  release:
-    types: [published]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
 
+concurrency:
+  group: survivorsunited-opac-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
-      - name: Build Fabric 1.21.11 and run checks
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run tests and build Fabric 1.21.11
         run: |
           chmod +x ./gradlew
           ./gradlew :Common:test :Fabric:build --no-daemon --stacktrace
-      - name: Stage distributable jar and checksum
+      - name: Prepare and validate release assets
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p release
-          mapfile -t files < <(find Fabric/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' ! -name '*-shadow.jar' | sort)
-          if [ "${#files[@]}" -ne 1 ]; then
-            printf 'Expected exactly one Fabric release JAR, found %s\n' "${#files[@]}"
-            printf '%s\n' "${files[@]}"
+          version=$(sed -n 's/^version=//p' gradle.properties | tr -d '\r')
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "su-fabric-v${version/+/-}" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match mod version $version" >&2
             exit 1
           fi
-          cp "${files[0]}" release/
-          (cd release && sha256sum ./*.jar > SHA256SUMS.txt)
-          printf 'Fabric 1.21.11 build of SurvivorsUnited Open Parties and Claims\nSource: %s\nCommit: %s\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA" > release/README.txt
-      - name: Upload release package
-        uses: actions/upload-artifact@v4
+          mkdir -p release-assets
+          mapfile -t jars < <(find Fabric/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' ! -name '*-shadow.jar' | sort)
+          if [[ "${#jars[@]}" -ne 1 ]]; then
+            printf 'Expected exactly one Fabric release jar, found %s\n' "${#jars[@]}" >&2
+            printf '%s\n' "${jars[@]}" >&2
+            exit 1
+          fi
+          cp "${jars[0]}" release-assets/
+          printf 'SurvivorsUnited Open Parties and Claims\nFabric 1.21.11\nVersion: %s\nCommit: %s\n' "$version" "$GITHUB_SHA" > release-assets/README.txt
+          (cd release-assets && sha256sum *.jar > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
         with:
           name: survivorsunited-opac-fabric-1.21.11
-          path: release/
+          path: release-assets/*
           if-no-files-found: error
-  publish:
-    if: github.event_name == 'push' || (github.event_name == 'release' && github.event.action == 'published')
+      - name: Preserve test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: survivorsunited-opac-test-reports
+          path: |
+            Common/build/test-results/
+            Common/build/reports/tests/
+            Fabric/build/reports/
+          if-no-files-found: ignore
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/su-fabric-v')
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: survivorsunited-opac-fabric-1.21.11
-          path: release
-      - name: Attach jar, checksum and README to GitHub release
-        env:
-          GH_TOKEN: ${{ secrets.SURVIVORSUNITED_RELEASE_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.event.release.tag_name }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::warning::Release publication skipped: configure SURVIVORSUNITED_RELEASE_TOKEN with repository Contents: write and Workflows: write. The downloadable Actions artifact was created successfully."
-            exit 0
-          fi
-          if [ "${{ github.event_name }}" = "push" ]; then
-            TAG="su-1.21.11-${GITHUB_SHA:0:12}"
-            gh release create "$TAG" release/* --target "$GITHUB_SHA" --title "SurvivorsUnited OPAC 1.21.11 (${GITHUB_SHA:0:12})" --notes "Automated Fabric 1.21.11 build. Includes SHA256SUMS.txt; test before production deployment." --prerelease
-          else
-            gh release upload "$TAG" release/* --clobber
-          fi
+          path: release-assets
+      - name: Verify uploaded artifact hashes
+        run: cd release-assets && sha256sum -c SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: SurvivorsUnited Open Parties and Claims ${{ github.ref_name }}
+          body: |
+            Fabric 1.21.11 SurvivorsUnited build.
+            Includes the custom party administration, invitation and claim access commands.
+            Test on a non-production server before deployment.
+          files: release-assets/*
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: true
