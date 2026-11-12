@@ -46,12 +46,24 @@ This modifies **ArkadiBa's main player claim config only**, *not* subclaims, par
 
 ## Build and release
 
-GitHub Actions workflow `.github/workflows/survivorsunited-fabric-1.21.11.yml`:
-- Builds Fabric using Java 21 via `./gradlew :Fabric:build`.
-- Fails unless exactly one distributable JAR is found in `Fabric/build/libs`.
-- Packages the JAR, `SHA256SUMS.txt` and `README.txt` into a downloadable Actions artifact.
-- On a successful push to `survivorsunited/1.21.11`, **attempts** to publish a versioned GitHub prerelease tagged `su-1.21.11-<commit>` (or attaches assets to a manually published release) when the repository Actions secret `SURVIVORSUNITED_RELEASE_TOKEN` is configured. The token needs repository Contents: write, and may need Workflows: write because the release target branch contains workflow changes not present on the default branch. Without the secret, release publication is skipped but the Actions build artifact remains downloadable. GitHub's built-in workflow token produced HTTP 403 on release creation even though the job requested Contents: write.
-- Does not deploy to the production server or update minecraft-mods-manager automatically.
+GitHub Actions workflow `.github/workflows/survivorsunited-fabric-1.21.11.yml` follows the SurvivorsUnited PlayerRevive tagged-release model:
+- For commits on `survivorsunited/1.21.11` and pull requests, runs `./gradlew :Common:test :Fabric:build` with Java 21 and publishes a downloadable Actions artifact (not a GitHub Release).
+- Every build package contains the single distributable Fabric JAR, `SHA256SUMS.txt`, and `README.txt`, with SHA-256 verification and test-report upload.
+- A matching `su-fabric-v*` tag triggers the same build and then creates a GitHub prerelease using `softprops/action-gh-release@v2` and the built-in `GITHUB_TOKEN` with release-job-only `contents: write` permissions.
+- Tag name must match `su-fabric-v` plus the `version` in `gradle.properties`, replacing `+` with `-`. For `version=0.33.0+survivorsunited.1`, use **`su-fabric-v0.33.0-survivorsunited.1`**.
+- Do not tag a commit until the branch build and test-server validation have succeeded. Tags must point to a commit containing this release workflow.
+- If publishing gets HTTP 403, verify the repository/org GitHub Actions workflow-permissions policy; the earlier `gh release create` attempt returned 403 despite `contents: write`. No extra personal access token is configured by this workflow.
+- The release is not automatically installed on the server or registered in minecraft-mods-manager.
+
+Tag an approved commit with:
+
+```bash
+git fetch origin
+git switch survivorsunited/1.21.11
+git pull --ff-only origin survivorsunited/1.21.11
+git tag su-fabric-v0.33.0-survivorsunited.1
+git push origin su-fabric-v0.33.0-survivorsunited.1
+```
 
 ## Server verification checklist (Minecraft 1.21.11)
 
